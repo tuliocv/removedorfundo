@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)  # silencia avisos do PyTorch
+
 import streamlit as st
 from PIL import Image
 import numpy as np
@@ -30,28 +33,26 @@ uploaded_file = st.file_uploader("Envie uma imagem (PNG, JPG, JPEG):", type=["pn
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="📷 Imagem Original", use_container_width=True)
+    st.image(image, caption="📷 Imagem Original", width="stretch")
 
     with st.spinner("Processando imagem... ⏳"):
         inputs = processor(images=image, return_tensors="pt")
         outputs = model(**inputs)
         result = processor.post_process_panoptic_segmentation(outputs, target_sizes=[image.size[::-1]])[0]
 
-        # Máscara com todos os objetos (fundo = 0)
+        # Máscara do fundo
         panoptic_seg = result["segmentation"].numpy()
         unique_ids = np.unique(panoptic_seg)
-
-        # Cria máscara de fundo (assumindo que o ID mais comum é o fundo)
         counts = [(uid, np.sum(panoptic_seg == uid)) for uid in unique_ids]
         background_id = max(counts, key=lambda x: x[1])[0]
         mask = np.where(panoptic_seg != background_id, 255, 0).astype(np.uint8)
 
-        # Adiciona transparência ao fundo
+        # Cria imagem com transparência
         rgba = image.copy()
         rgba.putalpha(Image.fromarray(mask))
 
     st.success("✅ Fundo removido com sucesso!")
-    st.image(rgba, caption="🪄 Imagem sem fundo", use_container_width=True)
+    st.image(rgba, caption="🪄 Imagem sem fundo", width="stretch")
 
     buf = io.BytesIO()
     rgba.save(buf, format="PNG")
