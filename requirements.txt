@@ -4,3 +4,4 @@ transformers
 pillow
 numpy
 timm
+rembg
