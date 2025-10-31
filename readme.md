@@ -34,8 +34,11 @@ onnxruntime
 
 ### 5. Funcionalidades
 ✅ Upload de imagens (PNG, JPG, JPEG)
+
 ✅ Remoção automática de fundo com IA (U²-Net)
+
 ✅ Visualização da imagem original e do resultado
+
 ✅ Download do arquivo final em formato PNG com transparência
 
 ### 6. Desenvolvido por
