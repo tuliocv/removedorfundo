@@ -10,13 +10,12 @@ st.set_page_config(page_title="Removedor de Fundo com Transformer", page_icon="�
 st.title("🤖 Removedor de Fundo (Transformer – Hugging Face)")
 st.write("Modelo: **BRIAAI/RMBG-1.4** — Segmentação precisa com Vision Transformer")
 
-# Upload
 uploaded_file = st.file_uploader("Escolha uma imagem...", type=["png", "jpg", "jpeg"])
 
 @st.cache_resource
 def load_model():
-    processor = AutoProcessor.from_pretrained("briaai/RMBG-1.4")
-    model = AutoModelForImageSegmentation.from_pretrained("briaai/RMBG-1.4")
+    processor = AutoProcessor.from_pretrained("briaai/RMBG-1.4", trust_remote_code=True)
+    model = AutoModelForImageSegmentation.from_pretrained("briaai/RMBG-1.4", trust_remote_code=True)
     return processor, model
 
 if uploaded_file is not None:
@@ -29,8 +28,6 @@ if uploaded_file is not None:
         with torch.no_grad():
             preds = model(**inputs).logits
         mask = torch.sigmoid(preds)[0][0].numpy()
-
-        # Converter para alfa (transparência)
         mask = (mask * 255).astype(np.uint8)
         rgba = image.copy()
         rgba.putalpha(Image.fromarray(mask))
