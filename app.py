@@ -1,67 +1,63 @@
 import streamlit as st
 from PIL import Image
-import requests
+import numpy as np
+import torch
+from transformers import DetrImageProcessor, DetrForSegmentation
 import io
 
 # ===============================
-# ⚙️ CONFIGURAÇÕES DO APLICATIVO
+# ⚙️ CONFIGURAÇÕES INICIAIS
 # ===============================
-st.set_page_config(page_title="Removedor de Fundo (Hugging Face API)", page_icon="🪄", layout="centered")
+st.set_page_config(page_title="Removedor de Fundo (DETR público)", page_icon="🪄", layout="centered")
+st.title("🪄 Removedor de Fundo com Transformer Público (DETR)")
+st.write("Modelo: **facebook/detr-resnet-50-panoptic** — Segmentação panóptica local, sem API nem token.")
 
-st.title("🪄 Removedor de Fundo (Hugging Face API)")
-st.write("Modelo usado: **BRIAAI/RMBG-1.4** — Segmentação precisa baseada em Vision Transformer.")
+# ===============================
+# 📦 CACHE DO MODELO
+# ===============================
+@st.cache_resource
+def load_model():
+    processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50-panoptic")
+    model = DetrForSegmentation.from_pretrained("facebook/detr-resnet-50-panoptic")
+    return processor, model
 
-# ===============================
-# 🔐 AUTENTICAÇÃO
-# ===============================
-with st.expander("🔑 Configuração do Token (necessário apenas 1 vez)"):
-    st.markdown(
-        """
-        Você precisa de um token gratuito do Hugging Face para usar a API.  
-        1. Crie uma conta em [huggingface.co](https://huggingface.co/join)  
-        2. Vá em [Tokens de Acesso](https://huggingface.co/settings/tokens)  
-        3. Copie seu token (ex: `hf_xxxxxxxxxxxxxxxxxxx`)  
-        4. Cole abaixo:
-        """
-    )
-    token_input = st.text_input("Cole seu token do Hugging Face aqui:", type="password")
-    if token_input:
-        st.session_state["hf_token"] = token_input
-        st.success("✅ Token salvo na sessão com sucesso!")
+processor, model = load_model()
 
 # ===============================
 # 📤 UPLOAD DA IMAGEM
 # ===============================
 uploaded_file = st.file_uploader("Envie uma imagem (PNG, JPG, JPEG):", type=["png", "jpg", "jpeg"])
 
-# ===============================
-# 🚀 PROCESSAMENTO VIA API
-# ===============================
 if uploaded_file is not None:
-    if "hf_token" not in st.session_state:
-        st.warning("⚠️ Insira seu token do Hugging Face antes de continuar.")
-    else:
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="📷 Imagem Original", use_container_width=True)
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="📷 Imagem Original", use_container_width=True)
 
-        API_URL = "https://api-inference.huggingface.co/models/briaai/RMBG-1.4"
-        headers = {"Authorization": f"Bearer {st.session_state['hf_token']}"}
+    with st.spinner("Processando imagem... ⏳"):
+        inputs = processor(images=image, return_tensors="pt")
+        outputs = model(**inputs)
+        result = processor.post_process_panoptic_segmentation(outputs, target_sizes=[image.size[::-1]])[0]
 
-        with st.spinner("Removendo fundo via Hugging Face API..."):
-            response = requests.post(API_URL, headers=headers, data=uploaded_file.getvalue())
+        # Máscara com todos os objetos (fundo = 0)
+        panoptic_seg = result["segmentation"].numpy()
+        unique_ids = np.unique(panoptic_seg)
 
-            if response.status_code == 200:
-                result = Image.open(io.BytesIO(response.content)).convert("RGBA")
-                st.success("✅ Fundo removido com sucesso!")
-                st.image(result, caption="🪄 Imagem sem fundo", use_container_width=True)
+        # Cria máscara de fundo (assumindo que o ID mais comum é o fundo)
+        counts = [(uid, np.sum(panoptic_seg == uid)) for uid in unique_ids]
+        background_id = max(counts, key=lambda x: x[1])[0]
+        mask = np.where(panoptic_seg != background_id, 255, 0).astype(np.uint8)
 
-                buf = io.BytesIO()
-                result.save(buf, format="PNG")
-                st.download_button(
-                    "⬇️ Baixar imagem sem fundo (PNG)",
-                    data=buf.getvalue(),
-                    file_name="imagem_sem_fundo.png",
-                    mime="image/png",
-                )
-            else:
-                st.error(f"❌ Erro na API ({response.status_code}): {response.text}")
+        # Adiciona transparência ao fundo
+        rgba = image.copy()
+        rgba.putalpha(Image.fromarray(mask))
+
+    st.success("✅ Fundo removido com sucesso!")
+    st.image(rgba, caption="🪄 Imagem sem fundo", use_container_width=True)
+
+    buf = io.BytesIO()
+    rgba.save(buf, format="PNG")
+    st.download_button(
+        "⬇️ Baixar imagem sem fundo (PNG)",
+        data=buf.getvalue(),
+        file_name="imagem_sem_fundo.png",
+        mime="image/png"
+    )
